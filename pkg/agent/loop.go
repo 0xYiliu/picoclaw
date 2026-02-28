@@ -1249,7 +1249,7 @@ func formatMessageForSummary(msg providers.Message) []string {
 				"assistant(tool_call id=%s name=%s): %s",
 				tc.ID,
 				name,
-				utils.Truncate(args, 240),
+				truncateSummaryField(args, 240),
 			))
 		}
 
@@ -1266,13 +1266,21 @@ func formatMessageForSummary(msg providers.Message) []string {
 		if content == "" {
 			return []string{fmt.Sprintf("tool(%s):", toolID)}
 		}
-		return []string{fmt.Sprintf("tool(%s): %s", toolID, utils.Truncate(content, 320))}
+		return []string{fmt.Sprintf("tool(%s): %s", toolID, truncateSummaryField(content, 320))}
 
 	case "user":
 		fallthrough
 	default:
 		return []string{fmt.Sprintf("%s: %s", msg.Role, content)}
 	}
+}
+
+func truncateSummaryField(content string, max int) string {
+	truncated := utils.Truncate(content, max)
+	if utf8.RuneCountInString(truncated) < utf8.RuneCountInString(content) {
+		return truncated + " [TRUNCATED]"
+	}
+	return truncated
 }
 
 // estimateTokens estimates the number of tokens in a message list.
