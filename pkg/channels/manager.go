@@ -259,6 +259,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("wecom_aibot", "WeCom AI Bot")
 	}
 
+	if m.config.Channels.ExternalService.Enabled && m.config.Channels.ExternalService.Token != "" {
+		m.initChannel("external_service", "External Service")
+	}
+
 	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
 		m.initChannel("wecom_app", "WeCom App")
 	}

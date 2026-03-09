@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
+	_ "github.com/sipeed/picoclaw/pkg/channels/externalservice"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"

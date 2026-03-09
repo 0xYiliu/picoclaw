@@ -149,6 +149,15 @@ func DefaultConfig() *Config {
 				MaxSteps:       10,
 				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
 			},
+			ExternalService: ExternalServiceConfig{
+				Enabled:        false,
+				Token:          "",
+				PingInterval:   30,
+				ReadTimeout:    60,
+				WriteTimeout:   10,
+				MaxConnections: 1,
+				AllowFrom:      FlexibleStringSlice{},
+			},
 			Pico: PicoConfig{
 				Enabled:        false,
 				Token:          "",

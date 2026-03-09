@@ -217,20 +217,21 @@ func (d *AgentDefaults) GetModelName() string {
 }
 
 type ChannelsConfig struct {
-	WhatsApp   WhatsAppConfig   `json:"whatsapp"`
-	Telegram   TelegramConfig   `json:"telegram"`
-	Feishu     FeishuConfig     `json:"feishu"`
-	Discord    DiscordConfig    `json:"discord"`
-	MaixCam    MaixCamConfig    `json:"maixcam"`
-	QQ         QQConfig         `json:"qq"`
-	DingTalk   DingTalkConfig   `json:"dingtalk"`
-	Slack      SlackConfig      `json:"slack"`
-	LINE       LINEConfig       `json:"line"`
-	OneBot     OneBotConfig     `json:"onebot"`
-	WeCom      WeComConfig      `json:"wecom"`
-	WeComApp   WeComAppConfig   `json:"wecom_app"`
-	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
-	Pico       PicoConfig       `json:"pico"`
+	WhatsApp        WhatsAppConfig        `json:"whatsapp"`
+	Telegram        TelegramConfig        `json:"telegram"`
+	Feishu          FeishuConfig          `json:"feishu"`
+	Discord         DiscordConfig         `json:"discord"`
+	MaixCam         MaixCamConfig         `json:"maixcam"`
+	QQ              QQConfig              `json:"qq"`
+	DingTalk        DingTalkConfig        `json:"dingtalk"`
+	Slack           SlackConfig           `json:"slack"`
+	LINE            LINEConfig            `json:"line"`
+	OneBot          OneBotConfig          `json:"onebot"`
+	WeCom           WeComConfig           `json:"wecom"`
+	WeComApp        WeComAppConfig        `json:"wecom_app"`
+	WeComAIBot      WeComAIBotConfig      `json:"wecom_aibot"`
+	ExternalService ExternalServiceConfig `json:"external_service"`
+	Pico            PicoConfig            `json:"pico"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -399,6 +400,20 @@ type WeComAIBotConfig struct {
 	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
 	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
+}
+
+type ExternalServiceConfig struct {
+	Enabled            bool                `json:"enabled"                     env:"PICOCLAW_CHANNELS_EXTERNAL_SERVICE_ENABLED"`
+	Token              string              `json:"token"                       env:"PICOCLAW_CHANNELS_EXTERNAL_SERVICE_TOKEN"`
+	AllowTokenQuery    bool                `json:"allow_token_query,omitempty"`
+	AllowOrigins       []string            `json:"allow_origins,omitempty"`
+	PingInterval       int                 `json:"ping_interval,omitempty"`
+	ReadTimeout        int                 `json:"read_timeout,omitempty"`
+	WriteTimeout       int                 `json:"write_timeout,omitempty"`
+	MaxConnections     int                 `json:"max_connections,omitempty"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_EXTERNAL_SERVICE_ALLOW_FROM"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"        env:"PICOCLAW_CHANNELS_EXTERNAL_SERVICE_REASONING_CHANNEL_ID"`
 }
 
 type PicoConfig struct {
