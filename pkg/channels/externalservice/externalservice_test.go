@@ -3,6 +3,7 @@ package externalservice
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -285,5 +286,104 @@ func TestOutboundRoutesToMappedConnection(t *testing.T) {
 	}
 	if len(conn2Messages) != 1 {
 		t.Fatalf("expected 1 message to conn2, got %d", len(conn2Messages))
+	}
+}
+
+func TestSendToConnectionForChatIDClearsStaleMappingOnWriteFailure(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, err := NewExternalServiceChannel(config.ExternalServiceConfig{Token: "secret"}, msgBus)
+	if err != nil {
+		t.Fatalf("NewExternalServiceChannel() error = %v", err)
+	}
+	if err := ch.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	pc := &externalConn{
+		id: "conn-1",
+		writeJSONFn: func(v any) error {
+			return errors.New("broken pipe")
+		},
+	}
+	ch.connections.Store(pc.id, pc)
+	ch.chatIDMapping.Store("custom-chat-1", map[string]string{
+		"sessionID": "sess-1",
+		"connID":    pc.id,
+	})
+
+	err = ch.sendToConnectionForChatID("custom-chat-1", ExternalServiceMessage{Type: TypeMessageCreate, SessionID: "sess-1"})
+	if err == nil {
+		t.Fatal("expected send error")
+	}
+	if _, ok := ch.chatIDMapping.Load("custom-chat-1"); ok {
+		t.Fatal("expected stale chat mapping to be removed after write failure")
+	}
+}
+
+func TestRemoveChatMappingsForConnRemovesMatchingEntries(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, err := NewExternalServiceChannel(config.ExternalServiceConfig{Token: "secret"}, msgBus)
+	if err != nil {
+		t.Fatalf("NewExternalServiceChannel() error = %v", err)
+	}
+
+	ch.chatIDMapping.Store("chat-1", map[string]string{"sessionID": "s1", "connID": "conn-1"})
+	ch.chatIDMapping.Store("chat-2", map[string]string{"sessionID": "s2", "connID": "conn-2"})
+	ch.chatIDMapping.Store("chat-3", map[string]string{"sessionID": "s3", "connID": "conn-1"})
+
+	ch.removeChatMappingsForConn("conn-1")
+
+	if _, ok := ch.chatIDMapping.Load("chat-1"); ok {
+		t.Fatal("expected chat-1 mapping to be removed")
+	}
+	if _, ok := ch.chatIDMapping.Load("chat-3"); ok {
+		t.Fatal("expected chat-3 mapping to be removed")
+	}
+	if _, ok := ch.chatIDMapping.Load("chat-2"); !ok {
+		t.Fatal("expected chat-2 mapping to remain")
+	}
+}
+
+func TestExternalConnWriteJSONRefreshesWriteDeadline(t *testing.T) {
+	var deadline time.Time
+	pc := &externalConn{
+		id:           "conn-1",
+		writeTimeout: 3 * time.Second,
+		setWriteDeadlineFn: func(t time.Time) error {
+			deadline = t
+			return nil
+		},
+		writeJSONFn: func(v any) error {
+			return nil
+		},
+	}
+
+	before := time.Now()
+	if err := pc.writeJSON(ExternalServiceMessage{Type: TypeMessageCreate}); err != nil {
+		t.Fatalf("writeJSON() error = %v", err)
+	}
+	if deadline.IsZero() {
+		t.Fatal("expected write deadline to be set")
+	}
+	if deadline.Before(before.Add(2*time.Second)) || deadline.After(before.Add(4*time.Second)) {
+		t.Fatalf("unexpected deadline %v", deadline)
+	}
+}
+
+func TestExternalConnWriteJSONReturnsDeadlineError(t *testing.T) {
+	pc := &externalConn{
+		id:           "conn-1",
+		writeTimeout: 3 * time.Second,
+		setWriteDeadlineFn: func(time.Time) error {
+			return net.ErrClosed
+		},
+		writeJSONFn: func(v any) error {
+			return nil
+		},
+	}
+
+	err := pc.writeJSON(ExternalServiceMessage{Type: TypeMessageCreate})
+	if !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("expected net.ErrClosed, got %v", err)
 	}
 }

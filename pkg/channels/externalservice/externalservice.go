@@ -21,12 +21,14 @@ import (
 )
 
 type externalConn struct {
-	id          string
-	conn        *websocket.Conn
-	writeMu     sync.Mutex
-	closed      atomic.Bool
-	writeJSONFn func(v any) error
-	closeFn     func() error
+	id                 string
+	conn               *websocket.Conn
+	writeMu            sync.Mutex
+	closed             atomic.Bool
+	writeTimeout       time.Duration
+	writeJSONFn        func(v any) error
+	setWriteDeadlineFn func(time.Time) error
+	closeFn            func() error
 }
 
 func (pc *externalConn) writeJSON(v any) error {
@@ -35,6 +37,17 @@ func (pc *externalConn) writeJSON(v any) error {
 	}
 	pc.writeMu.Lock()
 	defer pc.writeMu.Unlock()
+	if pc.writeTimeout > 0 {
+		if pc.setWriteDeadlineFn != nil {
+			if err := pc.setWriteDeadlineFn(time.Now().Add(pc.writeTimeout)); err != nil {
+				return err
+			}
+		} else if pc.conn != nil {
+			if err := pc.conn.SetWriteDeadline(time.Now().Add(pc.writeTimeout)); err != nil {
+				return err
+			}
+		}
+	}
 	if pc.writeJSONFn != nil {
 		return pc.writeJSONFn(v)
 	}
@@ -119,6 +132,7 @@ func (c *ExternalServiceChannel) Stop(ctx context.Context) error {
 	c.SetRunning(false)
 	c.connections.Range(func(key, value any) bool {
 		if conn, ok := value.(*externalConn); ok {
+			c.removeChatMappingsForConn(conn.id)
 			conn.close()
 		}
 		c.connections.Delete(key)
@@ -222,6 +236,9 @@ func (c *ExternalServiceChannel) sendToConnection(msg ExternalServiceMessage) er
 		return nil
 	}
 	if sendErr != nil {
+		logger.WarnCF("external_service", "Broadcast send failed", map[string]any{
+			"error": sendErr.Error(),
+		})
 		return fmt.Errorf("send external_service message: %w", channels.ErrTemporary)
 	}
 	return fmt.Errorf("no active external_service connection: %w", channels.ErrSendFailed)
@@ -252,10 +269,23 @@ func (c *ExternalServiceChannel) sendToConnectionForChatID(chatID string, msg Ex
 			if pc, ok := connVal.(*externalConn); ok {
 				if err := pc.writeJSON(msg); err != nil {
 					sendErr = err
+					logger.WarnCF("external_service", "Targeted send failed", map[string]any{
+						"chat_id":    chatID,
+						"session_id": msg.SessionID,
+						"conn_id":    targetConnID,
+						"error":      err.Error(),
+					})
+					c.chatIDMapping.Delete(chatID)
 				} else {
 					sent = true
 				}
 			}
+		} else {
+			logger.WarnCF("external_service", "Target connection missing for chat mapping", map[string]any{
+				"chat_id": chatID,
+				"conn_id": targetConnID,
+			})
+			c.chatIDMapping.Delete(chatID)
 		}
 	}
 
@@ -291,7 +321,11 @@ func (c *ExternalServiceChannel) handleWebSocket(w http.ResponseWriter, r *http.
 		logger.ErrorCF("external_service", "WebSocket upgrade failed", map[string]any{"error": err.Error()})
 		return
 	}
-	pc := &externalConn{id: uuid.New().String(), conn: conn}
+	writeTimeout := time.Duration(c.config.WriteTimeout) * time.Second
+	if writeTimeout <= 0 {
+		writeTimeout = 10 * time.Second
+	}
+	pc := &externalConn{id: uuid.New().String(), conn: conn, writeTimeout: writeTimeout}
 	c.connections.Store(pc.id, pc)
 	c.connCount.Add(1)
 	go c.readLoop(pc)
@@ -314,9 +348,13 @@ func (c *ExternalServiceChannel) authenticate(r *http.Request) bool {
 
 func (c *ExternalServiceChannel) readLoop(pc *externalConn) {
 	defer func() {
+		c.removeChatMappingsForConn(pc.id)
 		pc.close()
 		c.connections.Delete(pc.id)
 		c.connCount.Add(-1)
+		logger.InfoCF("external_service", "WebSocket connection closed", map[string]any{
+			"conn_id": pc.id,
+		})
 	}()
 
 	readTimeout := time.Duration(c.config.ReadTimeout) * time.Second
@@ -354,6 +392,10 @@ func (c *ExternalServiceChannel) readLoop(pc *externalConn) {
 		}
 		_, rawMsg, err := pc.conn.ReadMessage()
 		if err != nil {
+			logger.WarnCF("external_service", "WebSocket read failed", map[string]any{
+				"conn_id": pc.id,
+				"error":   err.Error(),
+			})
 			return
 		}
 		_ = pc.conn.SetReadDeadline(time.Now().Add(readTimeout))
@@ -441,6 +483,11 @@ func (c *ExternalServiceChannel) handleMessageSend(pc *externalConn, msg Externa
 		"sessionID": sessionID,
 		"connID":    pc.id,
 	})
+	logger.InfoCF("external_service", "Chat mapped to connection", map[string]any{
+		"chat_id":    chatID,
+		"session_id": sessionID,
+		"conn_id":    pc.id,
+	})
 
 	peer := bus.Peer{Kind: peerKind, ID: peerID}
 	metadata := map[string]string{
@@ -478,4 +525,32 @@ func getPayloadString(payload map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+func (c *ExternalServiceChannel) removeChatMappingsForConn(connID string) {
+	if strings.TrimSpace(connID) == "" {
+		return
+	}
+	var removed []string
+	c.chatIDMapping.Range(func(key, value any) bool {
+		chatID, ok := key.(string)
+		if !ok {
+			return true
+		}
+		mapping, ok := value.(map[string]string)
+		if !ok {
+			return true
+		}
+		if mapping["connID"] == connID {
+			c.chatIDMapping.Delete(chatID)
+			removed = append(removed, chatID)
+		}
+		return true
+	})
+	if len(removed) > 0 {
+		logger.InfoCF("external_service", "Removed stale chat mappings for connection", map[string]any{
+			"conn_id":  connID,
+			"chat_ids": removed,
+		})
+	}
 }
