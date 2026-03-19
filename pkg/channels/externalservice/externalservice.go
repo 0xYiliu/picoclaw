@@ -495,6 +495,32 @@ func (c *ExternalServiceChannel) handleMessageSend(pc *externalConn, msg Externa
 		"session_id": sessionID,
 		"conn_id":    pc.id,
 	}
+	businessContext := strings.TrimSpace(getPayloadString(msg.Payload, "business_context"))
+	if businessContext != "" {
+		metadata["business_context"] = businessContext
+		logger.InfoCF("external_service", "Received business_context", map[string]any{
+			"session_id":       sessionID,
+			"chat_id":          chatID,
+			"business_context": businessContext,
+		})
+	}
+	responseSchema := strings.TrimSpace(getPayloadString(msg.Payload, "response_schema"))
+	if len(responseSchema) > 4000 {
+		logger.WarnCF("external_service", "response_schema too large, skipping", map[string]any{
+			"session_id":            sessionID,
+			"chat_id":               chatID,
+			"response_schema_chars": len(responseSchema),
+		})
+		responseSchema = ""
+	}
+	if responseSchema != "" {
+		metadata["response_schema"] = responseSchema
+		logger.InfoCF("external_service", "Received response_schema", map[string]any{
+			"session_id":      sessionID,
+			"chat_id":         chatID,
+			"response_schema": responseSchema,
+		})
+	}
 	sender := bus.SenderInfo{
 		Platform:    "external_service",
 		PlatformID:  senderID,

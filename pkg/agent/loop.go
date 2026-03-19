@@ -52,10 +52,12 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
-	UserMessage     string   // User message content (may include prefix)
+	SessionKey      string // Session identifier for history/context
+	Channel         string // Target channel for tool execution
+	ChatID          string // Target chat ID for tool execution
+	UserMessage     string // User message content (may include prefix)
+	BusinessContext string
+	ResponseSchema  string
 	Media           []string // media:// refs from inbound message
 	DefaultResponse string   // Response when LLM returns empty
 	EnableSummary   bool     // Whether to trigger summarization
@@ -658,6 +660,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		BusinessContext: inboundMetadata(msg, metadataKeyBusinessContext),
+		ResponseSchema:  inboundMetadata(msg, metadataKeyResponseSchema),
 		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
@@ -801,6 +805,8 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Channel,
 		opts.ChatID,
 	)
+	applyBusinessContextToMessages(messages, opts.BusinessContext)
+	applyResponseSchemaToMessages(messages, opts.ResponseSchema)
 
 	// Resolve media:// refs to base64 data URLs (streaming)
 	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
@@ -1069,6 +1075,8 @@ func (al *AgentLoop) runLLMIteration(
 					newHistory, newSummary, "",
 					nil, opts.Channel, opts.ChatID,
 				)
+				applyBusinessContextToMessages(messages, opts.BusinessContext)
+				applyResponseSchemaToMessages(messages, opts.ResponseSchema)
 				continue
 			}
 			break

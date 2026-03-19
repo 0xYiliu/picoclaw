@@ -86,6 +86,66 @@ func TestRouteBySessionID(t *testing.T) {
 	}
 }
 
+func TestBusinessContextIsForwardedToInboundMetadata(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, err := NewExternalServiceChannel(config.ExternalServiceConfig{Token: "secret"}, msgBus)
+	if err != nil {
+		t.Fatalf("NewExternalServiceChannel() error = %v", err)
+	}
+	if err := ch.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	pc := &externalConn{id: "conn-1"}
+	msg := ExternalServiceMessage{
+		Type:      TypeMessageSend,
+		SessionID: "stable",
+		Payload: map[string]any{
+			"content":          "hello",
+			"business_context": "== CUSTOMER_CONTEXT ==\ncustomer_status: unknown\n== END CUSTOMER_CONTEXT ==",
+		},
+	}
+	ch.handleMessageSend(pc, msg)
+
+	inbound, ok := msgBus.ConsumeInbound(context.Background())
+	if !ok {
+		t.Fatal("expected inbound message")
+	}
+	if inbound.Metadata["business_context"] == "" {
+		t.Fatal("expected business_context metadata to be present")
+	}
+}
+
+func TestResponseSchemaIsForwardedToInboundMetadata(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, err := NewExternalServiceChannel(config.ExternalServiceConfig{Token: "secret"}, msgBus)
+	if err != nil {
+		t.Fatalf("NewExternalServiceChannel() error = %v", err)
+	}
+	if err := ch.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	pc := &externalConn{id: "conn-1"}
+	msg := ExternalServiceMessage{
+		Type:      TypeMessageSend,
+		SessionID: "stable",
+		Payload: map[string]any{
+			"content":         "hello",
+			"response_schema": "{\"type\":\"object\",\"properties\":{\"reply\":{\"type\":\"string\"}}}",
+		},
+	}
+	ch.handleMessageSend(pc, msg)
+
+	inbound, ok := msgBus.ConsumeInbound(context.Background())
+	if !ok {
+		t.Fatal("expected inbound message")
+	}
+	if inbound.Metadata["response_schema"] == "" {
+		t.Fatal("expected response_schema metadata to be present")
+	}
+}
+
 func TestMissingSessionID(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	ch, err := NewExternalServiceChannel(config.ExternalServiceConfig{Token: "secret"}, msgBus)
